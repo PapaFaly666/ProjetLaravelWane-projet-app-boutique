@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use SimpleSoftwareIO\QrCode\Facades\QrCode;
 
 /*
 |--------------------------------------------------------------------------
@@ -21,6 +22,10 @@ use Illuminate\Support\Facades\Route;
 */
 
 // Route pour récupérer l'utilisateur connecté (protégée)
+
+Route::get('/qrcode', function () {
+    return QrCode::size(200)->generate('https://example.com');
+});
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });

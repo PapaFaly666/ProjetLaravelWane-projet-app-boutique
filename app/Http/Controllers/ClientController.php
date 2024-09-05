@@ -17,6 +17,8 @@ use App\Traits\ResponseTrait;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use App\Facades\ClientServiceFacade as ClientService;
+
 
 
 /**
@@ -89,97 +91,24 @@ class ClientController extends Controller
  * )
  */
 
-    public function index(Request $request): JsonResponse
-    {
-        try {
-            // Créer la requête de base pour les clients
-            $query = Client::query();
-    
-            // Filtrage par surnom, adresse, ou téléphone
-            if ($request->filled('surnom')) {
-                $query->where('surnom', 'like', '%' . $request->input('surnom') . '%');
-            }
-    
-            if ($request->filled('adresse')) {
-                $query->where('adresse', 'like', '%' . $request->input('adresse') . '%');
-            }
-    
-            if ($request->filled('telephone')) {
-                $query->where('telephone', 'like', '%' . $request->input('telephone') . '%');
-            }
-    
-            // Filtrer par comptes
-            if ($request->filled('comptes')) {
-                $comptes = $request->input('comptes');
-                if ($comptes === 'oui') {
-                    $query->whereHas('user');  // Clients avec un compte
-                } elseif ($comptes === 'non') {
-                    $query->doesntHave('user');  // Clients sans compte
-                } else {
-                    return response()->json([
-                        'status' => 400,
-                        'message' => 'Valeur du paramètre "comptes" invalide. Utilisez "oui" ou "non".',
-                        'success' => false,
-                    ], 400);
-                }
-            }
-    
-            // Filtrer par statut d'activation du compte
-            if ($request->filled('active')) {
-                $active = $request->input('active');
-                if ($active === 'oui') {
-                    // Clients avec des comptes non bloqués
-                    $query->whereHas('user', function ($query) {
-                        $query->where('bloquer', false);
-                    });
-                } elseif ($active === 'non') {
-                    // Clients avec des comptes bloqués
-                    $query->whereHas('user', function ($query) {
-                        $query->where('bloquer', true);
-                    });
-                } else {
-                    return response()->json([
-                        'status' => 400,
-                        'message' => 'Valeur du paramètre "active" invalide. Utilisez "oui" ou "non".',
-                        'success' => false,
-                    ], 400);
-                }
-            }
-    
-            // Tri des résultats
-            if ($request->filled('sort_by') && in_array($request->input('sort_by'), ['surnom', 'adresse', 'telephone'])) {
-                $sortBy = $request->input('sort_by');
-                $sortOrder = $request->input('sort_order', 'asc');
-                $query->orderBy($sortBy, $sortOrder);
-            }
-    
-            // Paginer les résultats
-            $clients = $query->with('user')->paginate(5);
-    
-            // Vérifier si des clients ont été trouvés
-            if ($clients->isEmpty()) {
-                return response()->json([
-                    'status' => 404,
-                    'message' => 'Aucun client trouvé.',
-                    'success' => false,
-                ], 404);
-            }
-    
-            // Retourner les clients
-            return $this->sendResponse(200, 'Clients récupérés avec succès', ClientResource::collection($clients));
-    
-        } catch (Exception $e) {
-            return response()->json([
-                'status' => 500,
-                'message' => 'Erreur du serveur',
-                'success' => false,
-                'error' => $e->getMessage(),
-            ], 500);
+ public function index(Request $request)
+ {
+        $filters = $request->only(['surnom', 'adresse', 'telephone', 'comptes', 'active', 'sort_by', 'sort_order']);
+         
+        $isFiltered = false;
+        foreach ($filters as $key => $value) {
+             if (!empty($value)) {
+                 $isFiltered = true;
+                 break;
+             }
         }
-    }
-
-
-
+        if (!$isFiltered) {
+             return ClientResource::collection(ClientService::getAllClient());
+        }
+        $clients = Client::filter($filters)->with('user')->paginate(5);
+        return ClientResource::collection($clients);
+ }
+ 
       /**
      * @OA\Post(
      *     path="/clients/telephone",
@@ -235,42 +164,21 @@ class ClientController extends Controller
      * )
      */
 
-    public function searchParTelephone(Request $request): JsonResponse
-{
-    try {
-        // Valider que le numéro de téléphone est présent dans la requête
-        $request->validate([
-            'telephone' => 'required|string'
-        ]);
-
-        // Récupérer le numéro de téléphone depuis la requête
-        $telephone = $request->input('telephone');
-
-        // Rechercher le client par téléphone
-        $client = Client::where('telephone', $telephone)->with('user')->first();
-
-        // Si aucun client n'est trouvé
-        if (!$client) {
-            return response()->json([
-                'status' => 404,
-                'message' => 'Client non trouvé avec ce numéro de téléphone.',
-                'success' => false,
-            ], 404);
-        }
-
-        // Retourner le client trouvé
-        return $this->sendResponse(200, 'Client trouvé avec succès', new ClientResource($client));
-
-    } catch (\Exception $e) {
-        // Gérer les erreurs et retourner une réponse appropriée
-        return response()->json([
-            'status' => 500,
-            'message' => 'Erreur du serveur',
-            'success' => false,
-            'error' => $e->getMessage(),
-        ], 500);
-    }
-}
+     public function searchParTelephone(Request $request)
+     {
+         $request->validate([
+             'telephone' => 'required|string'
+         ]);
+         $telephone = $request->input('telephone');
+ 
+         $client = ClientService::findByTelephoneClient($telephone);
+ 
+         if ($client instanceof JsonResponse) {
+             return $client;
+         }
+        return new ClientResource($client);
+     }
+ 
 
 
     /**
@@ -319,18 +227,10 @@ class ClientController extends Controller
      * )
      */
     
-    public function show($id): JsonResponse
+    public function show($id)
     {
-        try {
-            $client = Client::with('user')->findOrFail($id);
-            return $this->sendResponse(200, 'Client récupéré avec succès', new ClientResource($client));
-        } catch (ModelNotFoundException $e) {
-            return response()->json([
-               'status' => 404,
-               'message' => 'Client introuvable.',
-               'success' => false,
-            ], 404);
-        }   
+            $client = ClientService::getClientById($id);
+            return new ClientResource($client);
     }
 
 
@@ -389,52 +289,12 @@ class ClientController extends Controller
  * )
  */
 
-    public function store(StoreClientRequest $request): JsonResponse
+ public function store(StoreClientRequest $request)
 {
-    if ($this->conditionNotAccomplished()) {
-        return $this->sendResponse(400, 'Condition non accomplie.');
-    }
-
-    try {
-        DB::transaction(function () use ($request) {
-
-            // Création du client
-            $client = new Client();
-            $client->surnom = $request->input('surnom');
-            $client->telephone = $request->input('telephone');
-            $client->adresse = $request->input('adresse');
-            $client->save();
-
-            // Création de l'utilisateur associé au client
-            if ($request->has('users')) {
-                $user = new User();
-                $user->email = $request->input('users.email');
-                $user->password = Hash::make($request->input('users.password'));
-                // Fixer le rôle à "client" par défaut
-                $user->role = 'client';
-                $user->nom = $request->input('users.nom', null); 
-                $user->prenom = $request->input('users.prenom', null);  
-                $user->client_id = $client->id; 
-                $user->save();
-
-                // Assigner l'ID de l'utilisateur au client
-                $client->user_id = $user->id;
-                $client->save();
-            }
-        });
-
-        return $this->sendResponse(201, 'Client et utilisateur créés avec succès.');
-
-    } catch (ValidationException $e) {
-        return $this->sendResponse(422, 'Erreur de validation', $e->errors());
-
-    } catch (QueryException $e) {
-        return $this->sendResponse(500, 'Erreur de base de données', ['error' => $e->getMessage()]);
-
-    } catch (Exception $e) {
-        return $this->sendResponse(500, 'Erreur : ' . $e->getMessage());
-    }
+    $client = ClientService::createClient($request->all());
+    return new ClientResource($client);
 }
+
 
     /**
  * @OA\Put(
@@ -504,21 +364,11 @@ class ClientController extends Controller
  */
 
 
-    public function update(UpdateClientRequest $request, int $id): JsonResponse
-    {
-        try {
-            $client = Client::findOrFail($id);
-
-            $client->update($request->validated());
-
-            return $this->sendResponse(200, 'Client mis à jour avec succès', $client);
-
-        } catch (ModelNotFoundException $e) {
-            return $this->sendResponse(404, 'Client non trouvé', $e->getMessage());
-        } catch (Exception $e) {
-            return $this->sendResponse(500, 'Erreur du serveur', $e->getMessage());
-        }
-    }
+ public function update(UpdateClientRequest $request, int $id)
+ {
+         $client =  ClientService::updateClient($id, $request->validated());
+         return new ClientResource($client);
+ }
 
 
 /**
