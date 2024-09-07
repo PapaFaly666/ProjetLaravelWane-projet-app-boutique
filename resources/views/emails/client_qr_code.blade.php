@@ -39,17 +39,20 @@
         }
         .qr-code {
             margin-top: 20px;
-            width: 100%;  /* Occuper toute la largeur du parent */
-            padding-top: 100%; /* Crée un carré avec un rapport 1:1 */
-            position: relative;
+            width: 250px;  /* Largeur fixe pour garantir un carré */
+            height: 250px; /* Hauteur égale à la largeur */
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto;
         }
         .qr-code img {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 50%;
-            height: 50%;
-            object-fit: contain;  /* Ajuste l'image tout en conservant les proportions */
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 0; /* Assurez-vous qu'aucun arrondi n'est appliqué ici */
         }
     </style>
 </head>
